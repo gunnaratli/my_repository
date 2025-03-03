@@ -1,3 +1,5 @@
 Hi!
 
-My name is Gunnar and this file was written to be pushed to Github
+First github push.
+
+Updated on a new branch.
