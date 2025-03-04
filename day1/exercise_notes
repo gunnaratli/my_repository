@@ -1,0 +1,22 @@
+Untracked:
+	> touch testing_gunnar.md
+Staged:
+	> git add testing_gunnar.md
+Unmodified:
+	> git commit -m "Testing the lifecycle of a file"
+Untracked:
+	> git rm --cached testing_gunnar.md
+
+
+Untracked:
+	> touch testing_gunnar.md
+Staged:
+	> git add testing_gunnar.md
+Unmodified:
+	> git commit -m "Testing the lifecycle of a file"
+Modified:
+	> echo "Update" >  testing_gunnar.md
+Staged:
+	> git add testing_gunnar.md
+Unmodified:
+	> git commit -m "Modified"
