@@ -1,0 +1,6 @@
+Exercise 3:
+* In the script matmul.py, I would start optimizing for speed in line 28
+
+* In the script euler72.py, I would start optimizing for speed in line 53
+
+* Best performance I achieved with matmult.py at N=250:
