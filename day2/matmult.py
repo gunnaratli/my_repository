@@ -1,7 +1,9 @@
+#!/usr/bin/python3
+
 # Program to multiply two matrices using nested loops
 import random
+import time
 
-@profile
 def matmult(N):
 
     # NxN matrix
@@ -30,11 +32,18 @@ def matmult(N):
     for r in result:
         print(r)
 
+    return result
+
 
 # Multiply two matrices using nested loops
 def main():
-    N = 100
+
+    N = 250
+    t1 = time.time()
     result = matmult(N)
+    t2 = time.time()
+    print("Elapsed time: ", t2-t1)
+    print(len(result))
 
 
 if __name__ == "__main__":
