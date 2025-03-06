@@ -9,7 +9,7 @@ def matmult(N):
     # Generate random matrices with the given dimensions
     X = np.random.randint(0, 101, size=(N, N))
     Y = np.random.randint(0, 101, size=(N, N+1))
-
+    
     return np.dot(X, Y)  
 
 

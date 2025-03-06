@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # Advanced Scientific Programming with Python - Exercise 3.2
 
 import numpy as np
@@ -11,7 +12,7 @@ b = np.arange(10,50)
 print("\nb:",b)
 
 # c) Reverse a vector (first element becomes last)
-c = np.flip(b)
+c = b[::-1]
 print("\nc:",c)
 
 # d) Create a 3x3 matrix with values ranging from 0 to 8
@@ -51,7 +52,7 @@ print("\nk:",k)
 # l) Consider two random array A anb B, check if they are equal
 A = np.random.randint(0,2,5)
 B = np.random.randint(0,2,5)
-equal = A == B
+equal = np.array_equal(A,B)
 print("\nl:",equal)
 
 # m) How to calculate the square of every number in an array in place (without creating temporaries)?
@@ -67,5 +68,3 @@ B = A + 1
 C = np.dot(A,B)
 D = np.diag(C)
 print("\nn:",C,D)
-
-

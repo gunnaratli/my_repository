@@ -1,0 +1,7 @@
+np.iinfo(np.int64)
+
+* Selections involving fancy indexing return a copy of the array (this is slower).
+* Selections involving slices return a view (e.g. 0:10, ::-1, etc ...).
+	- Another way of viewing the data of the array.
+	- The data of both objects are shared.
+* See np_array.flags
