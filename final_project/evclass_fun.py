@@ -4,6 +4,13 @@ Various functions used with the evclass module
 Gunnar Eggertsson, March 2024.
 """
 
+# Local application imports
+from silio import ReadGrx, read_eve, read_evlib, lib2grx, write_grx
+from SNSNPy.io import swd_client, smd_client
+from SNSNPy import snsn_tt
+from SNSNPy.sql_db import combull, sil
+from seis import LocationDist
+
 # Standard library imports
 import numpy as np
 import pandas as pd
@@ -18,13 +25,6 @@ from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, cohen_kappa_score
 
-# Local application imports
-from silio import ReadGrx, read_eve, read_evlib, lib2grx, write_grx
-from SNSNPy.io import swd_client, smd_client
-from SNSNPy import snsn_tt
-from SNSNPy.sql_db import combull, sil
-from seis import LocationDist
-
 
 ############################################################# VARIABLES #################################################################################
 
@@ -32,7 +32,7 @@ from seis import LocationDist
 BASE_PATH            = "/mnt/sil/eq1"                               # Base path to eq1 archive
 NAS_PATH             = "/mnt/snsn_data/eq1"                         # Base path to NAS
 sta_path             = "/home/gunnar/evclass/net.dat"               # Path to stations file
-evclass_path         = "/home/gunnar/python"                        # Path to the evclass scripts
+evclass_path         = "/home/gunnar/evclass"                       # Path to the evclass scripts
 evclass_models_path  = "/home/gunnar/python/models/2022"            # Base path to evclass models
 evornot_models_path  = "/home/gunnar/python/models/evornot"         # Base path to evornot models
 wfdata_path          = "/home/gunnar/evclass/waveformdata/psreq"    # Path to waveform data (NumPy arrays after data pre-preocessing)
@@ -221,6 +221,50 @@ for sta in stas:
 def generate_waveformdata(
     arrT_p, arrT_s, staU, network, ev_lat, ev_lon, plot=False, lf=2.0, hf=20.0
 ):
+    """
+    Fetches and plots waveform data from a given station, either via the SNSN dataserver or an FDSN server installed on slink. 
+
+    Parameters
+    ----------
+    arrT_p : obspy.UTCDateTime
+        Arrival time of the direct P-wave.
+
+    arrT_s : obspy.UTCDateTime
+        Arrival time of the direct S-wave.
+
+    staU : str               
+        ISC station code.
+
+    network : str               
+        Seismic network code.
+
+    ev_lat : float             
+        Event latitude in radians.
+
+    ev_lon : float             
+        Event longitude in radians.
+
+    plot : bool              
+        If True, traces will be plotted.
+
+    lf : float              
+        Lower cutoff frequency of the pass band used for plotting (in Hz).
+
+    hf : float           
+        Upper cutoff frequency of the pass band used for plotting (in Hz).
+
+    Returns
+    -------
+    evornot_data : numpy.ndarray of shape (1, 240) and type float64.
+                   Contains the RMS amplitudes computed in time windows corresponding to Noise, P, S and Coda for channels Z, R and T, band-pass filtered in twenty narrow frequency bands.
+                   The array shape follows the structure: 4 (time windows) X 3 (channels) X 20 (frequency bands) = 240 features.
+                   Used for event-or-not classification.
+
+    evclass_data : numpy.ndarray of shape (1, 240) and type float64.
+                   Contains the RMS amplitudes computed in time windows corresponding to P, P-coda, S and S-coda for channels Z, R and T, band-pass filtered in twenty narrow frequency bands.
+                   The array shape follows the structure: 4 (time windows) X 3 (channels) X 20 (frequency bands) = 240 features.
+                   Used for event classification.
+    """
 
     f_lo      = np.insert(np.arange(2, 39, 2), 0, 1)            # Lower end of pass-band
     pre_time  = 60                                              # Number of seconds to fetch before P-arrival
@@ -258,8 +302,7 @@ def generate_waveformdata(
             )
 
     # FDSN server
-    except Exception as e:
-        print("Failed to fetch data from dataserver. Falling back to FDSN server.", e)
+    except Exception:
         try:
             fdsn = "http://130.238.140.89:8080"
             t1_s = "%4d-%02d-%02dT%02d:%02d:%06.3f" % (
@@ -310,7 +353,7 @@ def generate_waveformdata(
                         attach_response=True,
                     )
                     ch = "HHZ"
-                except Exception as e:
+                except Exception:
                     stz = client.get_waveforms(
                         network=network,
                         station=staU,
@@ -562,7 +605,25 @@ def generate_waveformdata(
     return (evornot_data, evclass_data)
 
 
-def remove_IR(st):   
+def remove_IR(st):
+    """
+    Remove instrument response from data in an obspy data stream.
+
+    Parameters
+    ----------
+    st : obspy.Stream
+        Raw data (instrument response not removed).
+
+    Returns
+    -------
+    obspy.Stream
+        The input data stream with instrument response removed, converted to velocity (nm/s).
+
+    Notes
+    -----
+    This operation modifies st in-place.
+    """ 
+
     for s in st:  # Use the metadata server
         sta = s.stats.station
         net = s.stats.network
@@ -599,6 +660,27 @@ def remove_IR(st):
 
 
 def rotate_zrt(st, ev_coord):
+    """
+    Rotate the horizontal components in an ObsPy Stream from North-East (NE) to Radial-Transverse (RT).
+
+    Parameters
+    ----------
+    st : obspy.Stream
+        ObsPy data stream with data in the ZNE coordinate system.
+
+    ev_coord : list of floats
+        Event latitude and longitude in radians ([ev_lat, ev_lon]).
+
+    Returns
+    -------
+    obspy.Stream
+        The modified ObsPy Stream with the horizontal components rotated from NE to RT.
+
+    Notes
+    -----
+    This operation modifies st in-place.
+    """
+
     # Get the back azimuth from meta data server
     for s in st:
         sta = s.stats.station
@@ -619,10 +701,50 @@ def rotate_zrt(st, ev_coord):
 
 
 def rms(arr):
+    """
+    Computes the Root-Mean-Squared (RMS) value of an input array.
+    
+    Parameters
+    ----------
+    arr : numpy.ndarray
+        The input array.
+
+    Returns
+    -------
+    float
+        The RMS value of the input array.
+    """
     return np.sqrt(np.mean(arr**2))
 
 
 def extract_windows(st, slices):
+    """
+    Slice an ObsPy Stream to form the time windows needed for event-or-not classification and the event classification.
+
+    Parameters
+    ----------
+    st : obspy.Stream 
+        ObsPy data stream.
+
+    slices : dict         
+        Dictionary mapping time window names to their corresponding slice indices in "st". 
+
+    Returns
+    -------
+    st_N : obspy.Stream
+        ObsPy data stream corresponding to the pre-P noise window.
+    st_P : obspy.Stream
+        ObsPy data stream corresponding to the P window.
+    st_Pc : obspy.Stream
+        ObsPy data stream corresponding to the P-coda window.
+    st_S : obspy.Stream
+        ObsPy data stream corresponding to the S window.
+    st_Sc : obspy.Stream
+        ObsPy data stream corresponding to the S-coda window.
+    st_C : obspy.Stream
+        ObsPy data stream corresponding to the coda window.
+    """
+
     n_channels = len(st)
     st_N = {}
     st_P = {}
@@ -643,12 +765,35 @@ def extract_windows(st, slices):
 
 
 def plot_traces(st, slices, sta, startT, lf=2.0, hf=20.0):
+    """
+    Plot the traces in an ObsPy Stream object with lines indicating different time windows.
+
+    Parameters
+    ----------
+    st : obspy.Stream
+        ObsPy data stream.
+
+    slices : dict         
+        Dictionary mapping time window names to their corresponding slice indices in "st".
+
+    sta : str               
+        Station code, either in the three-letter SNSN convention or the ISC code.
+
+    startT : datetime.datetime 
+        Start time of the plot.
+
+    lf : float             
+        Lower cutoff frequency of the pass band used for plotting (in Hz).
+
+    hf : float             
+        Upper cutoff frequency of the pass band used for plotting (in Hz).
+    """
+
     times = st[0].times()  # Extract the times
-    # times = [x-60 for x in times]
     st_copy = st.copy()
     st_copy.filter(
         "bandpass", freqmin=lf, freqmax=hf
-    )  # Filter in different frequency bands
+    )
     stc_N, stc_P, stc_Pc, stc_S, stc_Sc, stc_C = extract_windows(
         st_copy, slices
     )  # Extract the filtered windows
@@ -955,6 +1100,26 @@ def plot_traces(st, slices, sta, startT, lf=2.0, hf=20.0):
 
 
 def compute_Parrival(ev_OT, dist, ev_dep):
+    """
+    Compute the theoretical arrival time for the direct P-wave using the SNSN velocity model.
+
+    Parameters
+    ----------
+    ev_OT : datetime.datetime
+        Event origin time.
+
+    dist : float
+        Station-event epicentral distance in km.
+
+    ev_dep : float
+        Event depth in km.
+
+    Returns
+    -------
+    datetime.datetime
+        Estimated arrival time of the direct P-wave based on the SNSN velocity model.
+    """
+
     p, s, warn = snsn_tt.SNSNtt(velmod="snsn", depth=ev_dep, km=dist)
     if warn:
         print(warn)
@@ -964,6 +1129,26 @@ def compute_Parrival(ev_OT, dist, ev_dep):
 
 
 def compute_Sarrival(ev_OT, dist, ev_dep):
+    """
+    Compute the theoretical arrival time for the direct S-wave using the SNSN velocity model.
+
+    Parameters
+    ----------
+    ev_OT : datetime.datetime
+        Event origin time.
+
+    dist : float
+        Station-event epicentral distance in km.
+
+    ev_dep : float
+        Event depth in km.
+
+    Returns
+    -------
+    datetime.datetime
+        Estimated arrival time of the direct S-wave based on the SNSN velocity model.
+    """
+
     # if network in ["NS", "NO"]:
     if False:
         depths = [0, 12, 12, 23, 23, 31, 31, 50, 50, 80, 80, 6371]
@@ -1005,7 +1190,25 @@ def compute_Sarrival(ev_OT, dist, ev_dep):
         return arrT_s
 
 
-def is_dst(OT, timezone="UTC"):
+def is_dst(OT, timezone="Europe/Stockholm"):
+    """
+    Check if a given time falls within Daylight Saving Time (DST) in a specified timezone.
+
+    Parameters
+    ----------
+    OT : datetime.datetime
+        Event origin time.
+
+    timezone : str
+        Timezone in which to check for DST. Must be a valid IANA timezone string (e.g., "Europe/Stockholm").
+
+    Returns
+    -------
+    bool
+        True if the origin time falls within DST in the given timezone. 
+        False otherwise.
+    """
+
     dt = datetime.datetime(OT.year, OT.month, OT.day, OT.hour, OT.minute, OT.second)
     timezone = pytz.timezone(timezone)
     try:
@@ -1020,6 +1223,21 @@ def is_dst(OT, timezone="UTC"):
 
 
 def kiru_active_hour(OT):
+    """
+    Checks whether the origin time of an event occurs during the typical blasting hour in LKAB's Kirunavaara mine.
+
+    Parameters
+    ----------
+    OT : datetime.datetime
+        Event origin time.
+
+    Returns
+    -------
+    bool
+        True if the event occurs during the typical blasting hour in LKAB's Kirunavaara mine. 
+        False otherwise.
+    """
+
     dst = is_dst(OT, timezone="Europe/Stockholm")
     hr = int(OT.hour)
     mi = int(OT.minute)
@@ -1029,6 +1247,21 @@ def kiru_active_hour(OT):
 
 
 def malm_active_hour(OT):
+    """
+    Checks whether the origin time of an event occurs during the typical blasting hour in LKAB's Malmberget mine.
+
+    Parameters
+    ----------
+    OT : datetime.datetime
+        Event origin time.
+
+    Returns
+    -------
+    bool
+        True if the event occurs during the typical blasting hour in LKAB's Malmberget mine. 
+        False otherwise.
+    """
+
     dst = is_dst(OT, timezone="Europe/Stockholm")
     hr = int(OT.hour)
     mi = int(OT.minute)
@@ -1038,6 +1271,23 @@ def malm_active_hour(OT):
 
 
 def dist_kiru(ev_lat, ev_lon):
+    """
+    Calculates the great-circle distance (Haversine) between an event and LKAB's Kirunavaara mine.
+
+    Parameters
+    -----------
+    ev_lat : float
+        Event latitude in radians.
+
+    ev_lon : float
+        Event longitude in radians.
+
+    Returns
+    -------
+    float
+        Distance between an event and LKAB's Kirunavaara mine, in kilometers.
+    """
+
     dist = LocationDist(
         2, [ev_lat, ev_lon], [mines["kiru"][0] * d2r, mines["kiru"][1] * d2r], -1
     )[0]
@@ -1045,20 +1295,51 @@ def dist_kiru(ev_lat, ev_lon):
 
 
 def dist_malm(ev_lat, ev_lon):
+    """
+    Calculates the great-circle distance (Haversine) between an event and LKAB's Malmberget mine.
+
+    Parameters
+    -----------
+    ev_lat : float
+        Event latitude in radians.
+
+    ev_lon : float
+        Event longitude in radians.
+
+    Returns
+    -------
+    float
+        Distance between an event and LKAB's Malmberget mine, in kilometers.
+    """
+
     dist = LocationDist(
         2, [ev_lat, ev_lon], [mines["malm"][0] * d2r, mines["malm"][1] * d2r], -1
     )[0]
     return dist
 
 
-def dist_aitik(ev_lat, ev_lon):
-    dist = LocationDist(
-        2, [ev_lat, ev_lon], [mines["aiti"][0] * d2r, mines["aiti"][1] * d2r], -1
-    )[0]
-    return dist
-
-
 def in_kiru(ev_lat, ev_lon, sil=False):
+    """
+    Estimates whether an event is associated with LKAB's Kirunavaara mine.
+
+    Parameters
+    ----------
+    ev_lat : float
+        Event latitude in radians.
+
+    ev_lon : float
+        Event longitude in radians.
+
+    sil : bool
+        Whether the event comes from the SIL system (e.g. from events.aut or events.lib).
+
+    Returns
+    -------
+    bool
+        True if the event is within a pre-defined threshold (dist_lim_mines) from LKAB's Kirunavaara mine and also more than 6 km away from the mine in Mertainen.
+        False otherwise.
+    """
+
     dist = LocationDist(
         2, [ev_lat, ev_lon], [mines["kiru"][0] * d2r, mines["kiru"][1] * d2r], -1
     )[0]
@@ -1082,6 +1363,27 @@ def in_kiru(ev_lat, ev_lon, sil=False):
 
 
 def in_malm(ev_lat, ev_lon, sil=False):
+    """
+    Estimates whether an event is associated with LKAB's Malmberget mine.
+
+    Parameters
+    ----------
+    ev_lat : float
+        Event latitude in radians.
+
+    ev_lon : float
+        Event longitude in radians.
+
+    sil : bool
+        Whether the event comes from the SIL system (e.g. from events.aut or events.lib).
+
+    Returns
+    -------
+    bool
+        True if the event is within a pre-defined threshold (dist_lim_mines) from LKAB's Malmberget mine and also more than 6 km away from the mine in Aitik.
+        False otherwise.
+    """
+
     dist = LocationDist(
         2, [ev_lat, ev_lon], [mines["malm"][0] * d2r, mines["malm"][1] * d2r], -1
     )[0]
@@ -1099,6 +1401,24 @@ def in_malm(ev_lat, ev_lon, sil=False):
 
 
 def in_ren_kan_bjo(ev_lat, ev_lon):
+    """
+    Estimates whether an event is associated with any of the following mines: Renströmsgruvan, Kankbergsgruvan or Björkdalsgruvan.
+
+    Parameters
+    ----------
+    ev_lat : float
+        Event latitude in radians.
+
+    ev_lon : float
+        Event longitude in radians.
+
+    Returns
+    -------
+    bool
+        True if the event is within three kilometers of any of the three mines.
+        False otherwise.
+    """
+
     dist_lim = 3
     dist_rens = LocationDist(
         2, [ev_lat, ev_lon], [mines["rens"][0] * d2r, mines["rens"][1] * d2r], -1
@@ -1113,37 +1433,30 @@ def in_ren_kan_bjo(ev_lat, ev_lon):
     return np.any(np.array([dist_rens, dist_kank, dist_bjor]) < dist_lim)
 
 
-def stas_win_radius(ev_coord, phases):
-    sta_d = sta_dict()
-    for sta in stas:
-        # Exclude stations with four classes and generally noisy stations.
-        if sta in stas_4cl + stas_decom + ["up1", "for", "fab", "gno"]:
-            continue
-        sta_coord = [float(sta_d[sta][0]) * d2r, float(sta_d[sta][1]) * d2r]
-        dist = LocationDist(2, ev_coord, sta_coord, -1)[0]
-        if dist < 100 and sta not in [x[:-1] for x in phases]:
-            i = 0
-            append = True
-            for sta_phase in [x[:-1] for x in phases]:
-                if sta_phase in stas_old:
-                    continue
-                sta_phase_coord = [
-                    float(sta_d[sta_phase][0]) * d2r,
-                    float(sta_d[sta_phase][1]) * d2r,
-                ]
-                dist_phase = LocationDist(2, ev_coord, sta_phase_coord, -1)[0]
-                if dist < dist_phase:
-                    phases.insert(i, sta + "x")
-                    append = False
-                    break
-                i += 1
-            if append:
-                phases.append(sta + "x")
-    return phases
-
-
 def compute_probabilities(score_ex, score_qu, score_ql, score_me, weights):
-    # print(weights)
+    """
+    Compute the probabilities of an event belonging to each of the four classes {ex, qu, ql, me} given a specified set of weights.
+
+    Parameters
+    ----------
+    score_ex : list of float
+        List of individual-station probabilities for the ex class.
+
+    score_qu : list of float
+        List of individual-station probabilities for the qu class.
+
+    score_ql : list of float
+        List of individual-station probabilities for the ql class.
+
+    score_me : list of float
+        List of individual-station probabilities for the me class.
+
+    Returns
+    -------
+    List of floats
+        Weighted average of the probability of an event belonging to each class in the order: [P(ex), P(qu), P(ql), P(me)]
+    """
+
     probs = np.zeros(4)
     k = 0
     for score in [score_ex, score_qu, score_ql, score_me]:
@@ -1154,6 +1467,23 @@ def compute_probabilities(score_ex, score_qu, score_ql, score_me, weights):
 
 
 def compute_probabilities_eventornot(score_se, score_ev, weights):
+    """
+    Compute the probabilities of an event belonging to each of the four classes {spurious event (se), real seismic event (ev)} given a specified set of weights.
+
+    Parameters
+    ----------
+    score_se : list of float
+        List of individual-station probabilities for the se class.
+
+    score_ev : list of float
+        List of individual-station probabilities for the ev class.
+
+    Returns
+    -------
+    List of floats
+        Weighted average of the probability of an event belonging to each class in the order: [P(se), P(ev)]
+    """
+
     probs = np.zeros(2)
     k = 0
     for score in [score_se, score_ev]:
@@ -1163,6 +1493,24 @@ def compute_probabilities_eventornot(score_se, score_ev, weights):
 
 
 def month_converter(conv, fwd=True, bck=False):
+    """
+    Converts between two encoding formats for the months of the year: 3-letter month codes (e.g. "jul") and zero-padded month indices(e.g. "07").
+    
+    Parameters
+    ----------
+    conv : str
+        The month to convert; either a zero-padded month index (e.g. "07") or a 3-letter lowercase month code (e.g. "jul").
+    fwd  : bool
+        If True, converts a 3-letter month code to a zero-padded month index, e.g. "jul" -> "07".
+    bck : bool
+        If True, converts a zero-padded month index to a 3-letter month code, e.g. "07" --> "jul".
+
+    Returns
+    -------
+    str
+        The converted month encoding.
+    """
+
     mo_fwd = {
         "jan": "01",
         "feb": "02",
@@ -1200,6 +1548,25 @@ def month_converter(conv, fwd=True, bck=False):
 
 
 def str2datetime(date):
+    """
+    Converts a datestring in the format yyyymmdd to a datetime.date object with the corresponding date.
+
+    Parameters
+    ----------
+    date : str
+        An 8-character string representing a date in the format "yyyymmdd".
+
+    Returns
+    -------
+    datetime.date 
+        A datetime.date object corresponding to the given date.
+
+    Raises
+    ------
+    ValueError 
+        If the given string representing the date is not eight characters in length.
+    """
+
     if len(date) != 8:
         raise ValueError("Date string has wrong length. Format should be <yyyymmdd>")
     try:
@@ -1213,6 +1580,28 @@ def str2datetime(date):
 
 
 def time_of_day(date, time):
+    """
+    Converts a datetime.date object as returned by str2datetime and a time of day in the format HHMM(SS) to a datetime.datetime object with the given date and time.
+    
+    Parameters
+    ----------
+    curr_date : datetime.date
+        A datetime.date object, e.g. one returned by str2datetime.
+
+    time : str                  
+        A string representing the time of day in either 4-character ("HHMM") or 6-character ("HHMMSS") format. Seconds are optional.
+
+    Returns
+    -------
+    datetime.datetime
+        A datetime.datetime object corresponding to the given date and time.
+
+    Raises
+    ------
+    ValueError 
+        If the given string representing the date is not four or six characters in length.
+    """
+
     if len(time) != 4 and len(time) != 6:
         raise ValueError("Time string has wrong length. Format should be <HHMM(SS)>")
     hr = int(time[0:2])
@@ -1225,6 +1614,27 @@ def time_of_day(date, time):
 
 
 def find_event_closest_in_time(ev_file, time, cbull=False):
+    """
+    Find the index/line number of the event with origin time closest to a given time.
+
+    Parameters
+    ----------
+    ev_file : list                     
+        Output from silio.read_ev<lib|aut> or list of combull events for the date of the event.
+
+    time : datetime.datetime
+        A datetime.datetime object, e.g. one returned by time_of_day.
+
+    cbull : bool                     
+        If True, find event index in the combull event list for the day. If False, find the line number in events.<lib|aut>.
+
+    Returns
+    -------
+    int
+        The index or line number of the event with the origin time closest to "time". 
+        If cbull=False and multiple events have the same time difference, the one with the highest SIL quality factor is selected.
+    """
+
     smallest_diff = 1e10
     count = 0
     if cbull:
@@ -1271,6 +1681,23 @@ def find_event_closest_in_time(ev_file, time, cbull=False):
 
 
 def find_event_from_id(ev_file, Id):
+    """
+    For a given SIL event-ID, find the line number of the event in events.<lib|aut>. If more than one events share the same ID, the one with the highest SIL quality factor is selected.
+   
+    Parameters
+    ----------
+    ev_file : list
+        Output from silio.read_ev<lib|aut> for the date of the event.
+
+    Id : str
+        SIL event-ID.
+
+    Returns
+    -------
+    int
+        The line number of the event in events.<lib|aut>.
+    """
+
     automatic = "qual" in ev_file[0].keys()
     count = 1
     line = -1
@@ -1294,6 +1721,23 @@ def find_event_from_id(ev_file, Id):
 
 
 def get_evlib_path(BASE_PATH, date):
+    """
+    Returns the path to events.lib for a given base path and date.
+  
+    Parameters
+    ----------
+    BASE_PATH : str                  
+        The base directory of the eq1 archive, e.g. /mnt/sil/eq1. Should be an absolute path.
+
+    date : datetime.date
+        A datetime.date object representing the target date, e.g. output from str2datetime.
+
+    Returns
+    -------
+    str
+        The full path to events.lib file for the specified date within BASE_PATH.
+    """
+
     return (
         BASE_PATH
         + "/"
@@ -1308,6 +1752,23 @@ def get_evlib_path(BASE_PATH, date):
 
 
 def get_evaut_path(BASE_PATH, date):
+    """
+    Returns the path to events.aut for a given base path and date.
+  
+    Parameters
+    ----------
+    BASE_PATH : str                  
+        The base directory of the eq1 archive, e.g. /mnt/sil/eq1. Should be an absolute path.
+
+    date : datetime.date
+        A datetime.date object representing the target date, e.g. output from str2datetime.
+
+    Returns
+    -------
+    str
+        The full path to events.aut file for the specified date within BASE_PATH.
+    """
+
     return (
         BASE_PATH
         + "/"
@@ -1322,6 +1783,20 @@ def get_evaut_path(BASE_PATH, date):
 
 
 def sta_dict():
+    """
+    Generates a dictionary containing the coordinates and site-names of all stations used by the event (and event-or-not) classifier.
+
+    Returns
+    -------
+    dict
+         A dictionary mapping station names to their coordinates in the format:
+         {"sta": [lat, lon, dep]} where:
+         lat (float): Latitude in degrees.
+         lon (float): Longitude in degrees.
+         dep (float): Depth in kilometers.
+         site (string): Site name
+    """
+
     with open(sta_path, "r") as fp:
         lines = fp.readlines()
     d = {}
@@ -1340,20 +1815,58 @@ def sta_dict():
     return d
 
 
-def sort_uniq(List):
+def sort_uniq(lst):
+    """
+    Returns a list of all elements which are present at least twice in a given list of strings.
+
+    Parameters
+    ----------
+    lst : list of str
+        List of strings.
+
+    Returns
+    -------
+    list of str
+        A list containing all elements which are present at least twice in the input list, preserving the order of their first occurrence.
+    """
+
     new_list = []
     seen = []
-    for i in range(len(List)):
-        if List[i] in stas_old:
+    for i in range(len(lst)):
+        if lst[i] in stas_old:
             continue
-        if List[i] not in seen:
-            seen.append(List[i])
-        elif List[i] in seen:
-            new_list.append(List[i])
+        if lst[i] not in seen:
+            seen.append(lst[i])
+        elif lst[i] in seen:
+            new_list.append(lst[i])
     return new_list
 
 
-def evclass_write_grx_sta(sta, start_date, end_date, max_dist, Kiru, Malm, grx_file):
+def evclass_write_grx_sta(sta, start_date, end_date, max_dist, Kiru, Malm):
+    """
+    Write grx lines to standard output for all manually analyzed events that have at least one manually picked phase at a given station within a specified time period.
+
+    Parameters
+    ----------
+    sta: str  
+        3-digit station code.
+
+    start_date: str  
+        The earliest date to include data from, in the format yyyymmdd.
+
+    end_date: str  
+        The latest date to include data from, in the format yyyymmdd.
+
+    max_dist: int  
+        The maximum station-event epicentral distance to use, in kilometers.
+
+    Kiru: bool 
+        If True, only write events located less than <dist_lim_mines_sil> km away from LKAB's Kirunavaara mine.
+
+    Malm: bool 
+        If True, only write events located less than <dist_lim_mines_sil> km away from LKAB's Malmberget mine.
+    """
+
     # Convert the start- and end-dates to datetime.date objects
     start_date = datetime.date(
         int(start_date[0:4]), int(start_date[4:6]), int(start_date[6:8])
@@ -1514,6 +2027,26 @@ def evclass_write_grx_sta(sta, start_date, end_date, max_dist, Kiru, Malm, grx_f
 
 
 def evclass_data_pprocess(sta, grx_file, wf_file):
+    """
+    Writes a .npy file containing a NumPy array with the waveform data required for the event (and event-or-not) classifier.
+
+    Parameters
+    ----------
+    sta : str 
+        3-digit station code.
+
+    grx_file : str 
+        Path to the grx file for which to generate the pre-processed waveform data.
+
+    wf_file : str 
+        Path to the output .npy file. The file will be overwritten if it already exists.
+
+    Returns
+    -------
+    numpy.ndarray
+        NumPy array of shape (1, 240) and type float64 containing waveform data for all events in the input grx_file.
+    """
+
     sta_p = sta + "p"
     sta_s = sta + "s"
 
@@ -1586,6 +2119,32 @@ def evclass_data_pprocess(sta, grx_file, wf_file):
 
 
 def evclass_train_model(sta, data, Kiru, Malm, save_dir):
+    """
+    Trains a classification model, using fully-connected neural networks, for the classification of seismic events in Sweden and neighbouring countries.
+
+    Parameters
+    ----------
+    sta : str          
+        3-digit station code
+
+    data : numpy.ndarray 
+        The waveform data for which to train a classification model, e.g. the output from evclass_data_pprocess.
+
+    Kiru : bool        
+        If True, train a model specifically for the multiclass-classification in LKAB's Kirunavaara mine.
+
+    Malm : bool        
+        If True, train a model specifically for the multiclass-classification in LKAB's Malmberget mine.
+
+    save_dir : str      
+        Path to the directory where the model file will be saved. The file will be overwritten if it already exists.
+
+    Returns
+    -------
+    keras.models.Sequential
+        Trained model for the given station, stored in a directory set with variable save_dir.
+    """
+
     from tensorflow import keras
 
     # Case 1 - Training a model with events not associated with either of the mines in Kiruna or Malmberget.
@@ -1876,6 +2435,37 @@ def evclass_train_model(sta, data, Kiru, Malm, save_dir):
 
 
 def classification_map(ev_lat, ev_lon, seen, dists, sta_pred, pred_typ, conf, distance):
+    """
+    Plots a map with station locations and classifications.
+    The plot gets saved in the directory /home/gunnar/evclass.
+
+    Parameters
+    ----------
+    ev_lat : float
+        Event latitude in degrees.
+
+    ev_lon : float
+        Event longitude in degrees.
+
+    seen: list of str
+        List of stations which have already been used to provide a classification.
+
+    dists: list of float
+        List of station-event distances, in kilometers.
+
+    sta_pred: dict
+        Dictionary on the form {"station" : "<predicted event class>"}.
+
+    pred_typ: str
+        The predicted event type.
+
+    conf: int
+        The classification confidence.
+
+    distance: list of float
+        List with the min- and max station-event distances used for the classification.
+
+    """
     import pygmt
 
     fig = pygmt.Figure()
@@ -2111,6 +2701,20 @@ def classification_map(ev_lat, ev_lon, seen, dists, sta_pred, pred_typ, conf, di
 
 
 def in_combull(ev_id):
+    """
+    Checks whether a given automatic SIL event detection is already in the COMBULL database.
+
+    Parameters
+    ----------
+    ev_id: str
+        SIL event ID.
+
+    Returns
+    -------
+    bool
+        True if an event exists in the COMBULL within 10 seconds and 60 kilometers from the given SIL event.
+    """
+
     OT_thres = 10
     dist_thres = 60
 
@@ -2151,6 +2755,20 @@ def in_combull(ev_id):
 
 
 def in_silbull(ev_id):
+    """
+    Checks whether a given automatic SIL event detection is already in the SIL database (ann_evaut).
+
+    Parameters
+    ----------
+    ev_id: str
+        SIL event ID.
+
+    Returns
+    -------
+    bool
+        True if an event exists in the ann_evaut within 10 seconds and 60 kilometers from the given SIL event with mask=1.
+    """
+
     OT_thres = 10
     dist_thres = 60
 
