@@ -1,5 +1,5 @@
 """
-Various functions used with the evclass module
+Various functions used with the event classifier (evclass) module.
 
 Gunnar Eggertsson, March 2024.
 """
@@ -76,110 +76,50 @@ d2r                = np.pi / 180.0                          # Degrees to radians
 dist_lim_mines_sil = 25                                     # If an event is more than this distance (in km) away from Kiru/Malm, it is not taken to be in the mine
 dist_lim_mines_com = 25
 
+
+# SNSN stations which have had station-specific classification models trained.
 stas = [
-    "aal",
-    "arn",
-    "ask",
-    "bac",
-    "bju",
-    "ble",
-    "bog",
-    "bor",
-    "bre",
-    "bur",
-    "byx",
-    "del",
-    "dun",
-    "eks",
-    "ert",
-    "esk",
-    "fab",
-    "fal",
-    "fib",
-    "fin",
-    "fkp",
-    "fla",
-    "fly",
-    "for",
-    "gno",
-    "got",
-    "gra",
-    "har",
-    "has",
-    "hem",
-    "hot",
-    "hus",
-    "igg",
-    "kal",
-    "kov",
-    "kur",
-    "lan",
-    "lil",
-    "lnk",
-    "lun",
-    "mas",
-    "nas",
-    "nik",
-    "nor",
-    "nra",
-    "nrt",
-    "nyn",
-    "ode",
-    "ona",
-    "osk",
-    "ost",
-    "paj",
-    "rat",
-    "rot",
-    "sal",
-    "sju",
-    "sol",
-    "sto",
-    "str",
-    "sva",
-    "tjo",
-    "udd",
-    "uma",
-    "up1",
-    "van",
-    "vik",
-    "vst",
-    "vxj",
+    "aal", "arn", "ask", "bac", "bju", "ble", "bog", "bor", "bre", "bur",
+    "byx", "del", "dun", "eks", "ert", "esk", "fab", "fal", "fib", "fin",
+    "fkp", "fla", "fly", "for", "gno", "got", "gra", "har", "has", "hem",
+    "hot", "hus", "igg", "kal", "kov", "kur", "lan", "lil", "lnk", "lun",
+    "mas", "nas", "nik", "nor", "nra", "nrt", "nyn", "ode", "ona", "osk",
+    "ost", "paj", "rat", "rot", "sal", "sju", "sol", "sto", "str", "sva",
+    "tjo", "udd", "uma", "up1", "van", "vik", "vst", "vxj"
 ]
 
+# SNSN stations with all four possible event types in their station-specific classification models.
 stas_4cl = ["kur", "rat", "kov", "nik", "dun", "mas"]
+
+# SNSN stations which have been decomposed since the initiation of evclass
 stas_decom = ["udd", "uma"]
+
+# SNSN stations which were decomposed before the initiation of evclass.
 stas_old = ["asp", "hud", "ons"]
 
-# Temporary Hälsingland network
+# Stations in the temporary Hälsingland network
 stas_hals = [
-    "fag",
-    "mor",
-    "hog",
-    "sod",
-    "bas",
-    "hal",
-    "sjv",
-    "gad",
-    "fus",
-    "ess",
-    "orb",
-    "lus",
-    "dju",
+    "fag", "mor", "hog","sod", "bas", "hal", "sjv", "gad", "fus","ess",
+    "orb", "lus", "dju"
 ]
 
+# List of stations excluded from evclass, typically due to unfavorable noise conditions.
 stas_excl = ["VBYGD", "VAGH", "OSL", "COP", "MUD", "KONS", "ROEST", "JETT"]
 
+# Recognized event types in evclass.
 typs_allowed = ["ex", "qu", "ql", "me"]
 
+# Integer formatting of the recognized event types.
 type_conv = {"ex": 0, "qu": 1, "ql": 2, "me": 3}
 
+# ... and in reverse
 type_conv_rev = {"0": "ex", "1": "qu", "2": "ql", "3": "me"}
 
+# Similarly, for the mine-specific models.
 type_conv_rev_mines = {"0": "ex", "1": "ql", "2": "me"}
 
 
-# Columns for the event classifier (waveform features)
+# Column names used in evclass, corresponding to the processed waveform features.
 tws = [
     "Z-P",
     "Z-Pc",
@@ -199,23 +139,17 @@ for i in np.insert(np.arange(2, 39, 2), 0, 1):
     cols = cols + [str(i) + "-" + x for x in tws]
 cols.append("typ")
 
+# Locations of some prominent mines
 mines = {
-    "kiru": [67.8322, 20.1782],
-    "mert": [67.7095, 20.7917],
-    "svap": [67.6309, 20.9884],
-    "malm": [67.1885, 20.6992],
-    "aiti": [67.0719, 20.9532],
-    "rens": [64.9234, 20.0957],
-    "kank": [64.9118, 20.2408],
-    "bjor": [64.9360, 20.5692],
+    "kiru": [67.8322, 20.1782],     # Kirunavaara
+    "mert": [67.7095, 20.7917],     # Mertainen
+    "svap": [67.6309, 20.9884],     # Svappavaara
+    "malm": [67.1885, 20.6992],     # Malmberget
+    "aiti": [67.0719, 20.9532],     # Aitik
+    "rens": [64.9234, 20.0957],     # Renströmsgruvan
+    "kank": [64.9118, 20.2408],     # Kankbergsgruvan
+    "bjor": [64.9360, 20.5692],     # Björkdalsgruvan
 }
-
-sta_typs_allowed = {}
-for sta in stas:
-    if sta in stas_4cl:
-        sta_typs_allowed[sta] = typs_allowed
-    else:
-        sta_typs_allowed[sta] = typs_allowed[:-2]
 
 
 def generate_waveformdata(
@@ -612,7 +546,7 @@ def remove_IR(st):
     Parameters
     ----------
     st : obspy.Stream
-        Raw data (instrument response not removed).
+        ObsPy data stream containing raw data i.e. data where instrument response has not been removed.
 
     Returns
     -------
@@ -666,7 +600,7 @@ def rotate_zrt(st, ev_coord):
     Parameters
     ----------
     st : obspy.Stream
-        ObsPy data stream with data in the ZNE coordinate system.
+        ObsPy data stream containing data in the ZNE coordinate system.
 
     ev_coord : list of floats
         Event latitude and longitude in radians ([ev_lat, ev_lon]).
@@ -702,7 +636,7 @@ def rotate_zrt(st, ev_coord):
 
 def rms(arr):
     """
-    Computes the Root-Mean-Squared (RMS) value of an input array.
+    Compute the Root-Mean-Squared (RMS) value of an array.
     
     Parameters
     ----------
@@ -733,14 +667,19 @@ def extract_windows(st, slices):
     -------
     st_N : obspy.Stream
         ObsPy data stream corresponding to the pre-P noise window.
+
     st_P : obspy.Stream
         ObsPy data stream corresponding to the P window.
+
     st_Pc : obspy.Stream
         ObsPy data stream corresponding to the P-coda window.
+
     st_S : obspy.Stream
         ObsPy data stream corresponding to the S window.
+
     st_Sc : obspy.Stream
         ObsPy data stream corresponding to the S-coda window.
+
     st_C : obspy.Stream
         ObsPy data stream corresponding to the coda window.
     """
@@ -766,7 +705,7 @@ def extract_windows(st, slices):
 
 def plot_traces(st, slices, sta, startT, lf=2.0, hf=20.0):
     """
-    Plot the traces in an ObsPy Stream object with lines indicating different time windows.
+    Plot the traces in an ObsPy Stream object with vertical lines indicating different time windows.
 
     Parameters
     ----------
@@ -1320,7 +1259,7 @@ def dist_malm(ev_lat, ev_lon):
 
 def in_kiru(ev_lat, ev_lon, sil=False):
     """
-    Estimates whether an event is associated with LKAB's Kirunavaara mine.
+    Estimate whether an event is associated with LKAB's Kirunavaara mine.
 
     Parameters
     ----------
@@ -1364,7 +1303,7 @@ def in_kiru(ev_lat, ev_lon, sil=False):
 
 def in_malm(ev_lat, ev_lon, sil=False):
     """
-    Estimates whether an event is associated with LKAB's Malmberget mine.
+    Estimate whether an event is associated with LKAB's Malmberget mine.
 
     Parameters
     ----------
@@ -1402,7 +1341,10 @@ def in_malm(ev_lat, ev_lon, sil=False):
 
 def in_ren_kan_bjo(ev_lat, ev_lon):
     """
-    Estimates whether an event is associated with any of the following mines: Renströmsgruvan, Kankbergsgruvan or Björkdalsgruvan.
+    Estimate whether an event is associated with any of the following mines: 
+        1) Renströmsgruvan
+        2) Kankbergsgruvan 
+        3) Björkdalsgruvan.
 
     Parameters
     ----------
@@ -1436,25 +1378,37 @@ def in_ren_kan_bjo(ev_lat, ev_lon):
 def compute_probabilities(score_ex, score_qu, score_ql, score_me, weights):
     """
     Compute the probabilities of an event belonging to each of the four classes {ex, qu, ql, me} given a specified set of weights.
+    The four possible classes are:
+        1) ex : Blast. Typically originates from mining operations, quarry blasting or construction work.
+        2) qu : Natural earthquake.
+        3) ql : Mining-induced earthquake.
+        4) me : Mining-induced earthquake with relatively high strength in the lower frequencies.
 
     Parameters
     ----------
     score_ex : list of float
-        List of individual-station probabilities for the ex class.
+        List containing individual-station probabilities for the ex class.
 
     score_qu : list of float
-        List of individual-station probabilities for the qu class.
+        List containing individual-station probabilities for the qu class.
 
     score_ql : list of float
-        List of individual-station probabilities for the ql class.
+        List containing individual-station probabilities for the ql class.
 
     score_me : list of float
-        List of individual-station probabilities for the me class.
+        List containing individual-station probabilities for the me class.
+
+    weights : list of float
+        List of weights corresponding to the entries in <score_ex>, <score_qu>, <score_ql> and <score_me>.
 
     Returns
     -------
     List of floats
-        Weighted average of the probability of an event belonging to each class in the order: [P(ex), P(qu), P(ql), P(me)]
+        Weighted average of the probability of an event belonging to each class, in the order: [P(ex), P(qu), P(ql), P(me)].
+
+    Notes
+    -----
+    The lists <score_ex>, <score_qu>, <score_ql>, <score_me> and <weights> all need to have equal lengths.
     """
 
     probs = np.zeros(4)
@@ -1462,26 +1416,35 @@ def compute_probabilities(score_ex, score_qu, score_ql, score_me, weights):
     for score in [score_ex, score_qu, score_ql, score_me]:
         probs[k] = np.average(score, weights=weights)
         k += 1
-    # print(np.sum(probs))
     return probs
 
 
 def compute_probabilities_eventornot(score_se, score_ev, weights):
     """
-    Compute the probabilities of an event belonging to each of the four classes {spurious event (se), real seismic event (ev)} given a specified set of weights.
+    Compute the probabilities of an event belonging to each of the two classes {se, ev} given a specified set of weights.
+    The two passible classes are:
+        1) se : Spurious phase association.
+        2) ev : Real seismic event.
 
     Parameters
     ----------
     score_se : list of float
-        List of individual-station probabilities for the se class.
+        List containing individual-station probabilities for the se class.
 
     score_ev : list of float
-        List of individual-station probabilities for the ev class.
+        List containing individual-station probabilities for the ev class.
+
+    weights : list of float
+        List of weights corresponding to the entries in <score_se> and <score_ev>.
 
     Returns
     -------
     List of floats
-        Weighted average of the probability of an event belonging to each class in the order: [P(se), P(ev)]
+        Weighted average of the probability of an event belonging to each class, in the order: [P(se), P(ev)].
+
+    Notes
+    -----
+    The lists <score_se>, <score_ev> and <weights> all need to have equal lengths.
     """
 
     probs = np.zeros(2)
@@ -1494,14 +1457,18 @@ def compute_probabilities_eventornot(score_se, score_ev, weights):
 
 def month_converter(conv, fwd=True, bck=False):
     """
-    Converts between two encoding formats for the months of the year: 3-letter month codes (e.g. "jul") and zero-padded month indices(e.g. "07").
-    
+    Converts between two encoding formats for the months of the year: 
+        1) The SIL convention: 3-letter month codes (e.g. "jul").
+        2) Zero-padded month indices (e.g. "07").
+        
     Parameters
     ----------
     conv : str
         The month to convert; either a zero-padded month index (e.g. "07") or a 3-letter lowercase month code (e.g. "jul").
+
     fwd  : bool
         If True, converts a 3-letter month code to a zero-padded month index, e.g. "jul" -> "07".
+
     bck : bool
         If True, converts a zero-padded month index to a 3-letter month code, e.g. "07" --> "jul".
 
@@ -1559,7 +1526,7 @@ def str2datetime(date):
     Returns
     -------
     datetime.date 
-        A datetime.date object corresponding to the given date.
+        A datetime.date object corresponding to the date represented in <date>.
 
     Raises
     ------
@@ -1620,10 +1587,10 @@ def find_event_closest_in_time(ev_file, time, cbull=False):
     Parameters
     ----------
     ev_file : list                     
-        Output from silio.read_ev<lib|aut> or list of combull events for the date of the event.
+        Output from silio.read_ev{ref|lib} or list of combull events for the date on which the event occurred
 
     time : datetime.datetime
-        A datetime.datetime object, e.g. one returned by time_of_day.
+        A datetime.datetime object representing the origin time of the event, e.g. one returned by time_of_day.
 
     cbull : bool                     
         If True, find event index in the combull event list for the day. If False, find the line number in events.<lib|aut>.
@@ -1631,8 +1598,8 @@ def find_event_closest_in_time(ev_file, time, cbull=False):
     Returns
     -------
     int
-        The index or line number of the event with the origin time closest to "time". 
-        If cbull=False and multiple events have the same time difference, the one with the highest SIL quality factor is selected.
+        The index or line number of the event with the origin time closest to <time>. 
+        If cbull=False and multiple events have equal time differences, the event with the highest SIL quality factor is selected.
     """
 
     smallest_diff = 1e10
@@ -1682,12 +1649,14 @@ def find_event_closest_in_time(ev_file, time, cbull=False):
 
 def find_event_from_id(ev_file, Id):
     """
-    For a given SIL event-ID, find the line number of the event in events.<lib|aut>. If more than one events share the same ID, the one with the highest SIL quality factor is selected.
+    Return the line number that corresponds to a given SIL event ID in events.aut|lib.
+    If multiple events share the same SIL event ID (happens occasionally for events in events.aut), 
+    the event with the highest SIL quality factor is selected.
    
     Parameters
     ----------
     ev_file : list
-        Output from silio.read_ev<lib|aut> for the date of the event.
+        Output from silio.read_evref or silio.read_evlib for the date on which the event occurred.
 
     Id : str
         SIL event-ID.
@@ -1695,7 +1664,9 @@ def find_event_from_id(ev_file, Id):
     Returns
     -------
     int
-        The line number of the event in events.<lib|aut>.
+        The line number of the event corresponding to SIL event ID <Id> in events.lib or events.aut.
+        If <ev_file> is the output from silio.read_evref, the output will correspond to a line number in events.aut.
+        If <ev_file> is the output from silio.read_evlib, the output will correspond to a line number in events.lib.
     """
 
     automatic = "qual" in ev_file[0].keys()
@@ -1722,7 +1693,7 @@ def find_event_from_id(ev_file, Id):
 
 def get_evlib_path(BASE_PATH, date):
     """
-    Returns the path to events.lib for a given base path and date.
+    Return the absolute path to events.lib for a given base path and date.
   
     Parameters
     ----------
@@ -1735,7 +1706,7 @@ def get_evlib_path(BASE_PATH, date):
     Returns
     -------
     str
-        The full path to events.lib file for the specified date within BASE_PATH.
+        The absolute path to the events.lib file for the date specified by <date> within the data archive stored under <BASE_PATH>.
     """
 
     return (
@@ -1753,7 +1724,7 @@ def get_evlib_path(BASE_PATH, date):
 
 def get_evaut_path(BASE_PATH, date):
     """
-    Returns the path to events.aut for a given base path and date.
+    Return the absolute path to events.aut for a given base path and date.
   
     Parameters
     ----------
@@ -1766,7 +1737,7 @@ def get_evaut_path(BASE_PATH, date):
     Returns
     -------
     str
-        The full path to events.aut file for the specified date within BASE_PATH.
+        The absolute path to the events.aut file for the date specified by <date> within the data archive stored under <BASE_PATH>.
     """
 
     return (
@@ -1784,7 +1755,7 @@ def get_evaut_path(BASE_PATH, date):
 
 def sta_dict():
     """
-    Generates a dictionary containing the coordinates and site-names of all stations used by the event (and event-or-not) classifier.
+    Generate a dictionary containing the coordinates and site-names of all stations used by the event (and event-or-not) classifier.
 
     Returns
     -------
@@ -1817,7 +1788,7 @@ def sta_dict():
 
 def sort_uniq(lst):
     """
-    Returns a list of all elements which are present at least twice in a given list of strings.
+    Return a list of all elements which are present at least twice in a given list of strings.
 
     Parameters
     ----------
@@ -1844,7 +1815,9 @@ def sort_uniq(lst):
 
 def evclass_write_grx_sta(sta, start_date, end_date, max_dist, Kiru, Malm):
     """
-    Write grx lines to standard output for all manually analyzed events that have at least one manually picked phase at a given station within a specified time period.
+    Write grx lines to standard output. :
+        * Have at least one manually picked phase at a given station, <sta>.  
+        * Occur within the time period .
 
     Parameters
     ----------
@@ -2028,7 +2001,8 @@ def evclass_write_grx_sta(sta, start_date, end_date, max_dist, Kiru, Malm):
 
 def evclass_data_pprocess(sta, grx_file, wf_file):
     """
-    Writes a .npy file containing a NumPy array with the waveform data required for the event (and event-or-not) classifier.
+    Generates the processed waveform data required for the event (and event-or-not) classifier.
+    Writes the 
 
     Parameters
     ----------
@@ -2120,7 +2094,8 @@ def evclass_data_pprocess(sta, grx_file, wf_file):
 
 def evclass_train_model(sta, data, Kiru, Malm, save_dir):
     """
-    Trains a classification model, using fully-connected neural networks, for the classification of seismic events in Sweden and neighbouring countries.
+    Trains a classification model, using fully-connected neural networks, for a given station and set of waveform data.
+
 
     Parameters
     ----------
@@ -2138,11 +2113,6 @@ def evclass_train_model(sta, data, Kiru, Malm, save_dir):
 
     save_dir : str      
         Path to the directory where the model file will be saved. The file will be overwritten if it already exists.
-
-    Returns
-    -------
-    keras.models.Sequential
-        Trained model for the given station, stored in a directory set with variable save_dir.
     """
 
     from tensorflow import keras
@@ -2766,7 +2736,7 @@ def in_silbull(ev_id):
     Returns
     -------
     bool
-        True if an event exists in the ann_evaut within 10 seconds and 60 kilometers from the given SIL event with mask=1.
+        True if an event exists in the ann_evaut within 10 seconds and 60 kilometers from the given SIL and has mask=1.
     """
 
     OT_thres = 10
